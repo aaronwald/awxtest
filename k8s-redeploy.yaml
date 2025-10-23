@@ -1,0 +1,54 @@
+---
+- name: Redeploy Kubernetes Service
+  hosts: mostdock
+  gather_facts: no
+  
+  vars:
+    k8s_namespace: "default"
+    deployment_name: "my-service"
+    kubeconfig_path: "/home/ansible/.kube/config"
+    
+  tasks:
+    - name: Check minikube status
+      command: minikube status
+      register: minikube_status
+      changed_when: false
+      failed_when: false
+      
+    - name: Start minikube if not running
+      command: minikube start
+      when: minikube_status.rc != 0
+    
+    - name: Verify kubectl connectivity
+      command: kubectl --kubeconfig={{ kubeconfig_path }} get nodes
+      register: nodes
+      changed_when: false
+    
+    - name: Restart deployment
+      command: >
+        kubectl --kubeconfig={{ kubeconfig_path }}
+        rollout restart deployment/{{ deployment_name }}
+        -n {{ k8s_namespace }}
+      register: rollout_result
+
+    - name: Wait for rollout to complete
+      command: >
+        kubectl --kubeconfig={{ kubeconfig_path }}
+        rollout status deployment/{{ deployment_name }}
+        -n {{ k8s_namespace }}
+        --timeout=5m
+      register: rollout_status
+      
+    - name: Get pod status
+      command: >
+        kubectl --kubeconfig={{ kubeconfig_path }}
+        get pods -n {{ k8s_namespace }}
+        -l app={{ deployment_name }}
+      register: pod_status
+      changed_when: false
+      
+    - name: Display result
+      debug:
+        msg:
+          - "{{ rollout_status.stdout }}"
+          - "{{ pod_status.stdout }}"
