@@ -9,20 +9,24 @@
     kubeconfig_path: "/home/ansible/.kube/config"
     
   tasks:
-    - name: Check minikube status
-      command: minikube status
-      register: minikube_status
-      changed_when: false
-      failed_when: false
-      
-    - name: Start minikube if not running
-      command: minikube start
-      when: minikube_status.rc != 0
-    
     - name: Verify kubectl connectivity
       command: kubectl --kubeconfig={{ kubeconfig_path }} get nodes
       register: nodes
       changed_when: false
+    
+    - name: Check if deployment exists
+      command: >
+        kubectl --kubeconfig={{ kubeconfig_path }}
+        get deployment {{ deployment_name }}
+        -n {{ k8s_namespace }}
+      register: deployment_exists
+      changed_when: false
+      failed_when: false
+      
+    - name: Fail if deployment doesn't exist
+      fail:
+        msg: "Deployment {{ deployment_name }} not found in namespace {{ k8s_namespace }}"
+      when: deployment_exists.rc != 0
     
     - name: Restart deployment
       command: >
@@ -31,7 +35,7 @@
         -n {{ k8s_namespace }}
       register: rollout_result
 
-    - name: Wait for rollout to complete
+    - name: Wait for rollout
       command: >
         kubectl --kubeconfig={{ kubeconfig_path }}
         rollout status deployment/{{ deployment_name }}
@@ -43,12 +47,11 @@
       command: >
         kubectl --kubeconfig={{ kubeconfig_path }}
         get pods -n {{ k8s_namespace }}
-        -l app={{ deployment_name }}
       register: pod_status
       changed_when: false
       
     - name: Display result
       debug:
         msg:
-          - "{{ rollout_status.stdout }}"
-          - "{{ pod_status.stdout }}"
+          - "Rollout: {{ rollout_status.stdout }}"
+          - "Pods: {{ pod_status.stdout }}"
